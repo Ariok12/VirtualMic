@@ -15,14 +15,26 @@
 - **Modern UI**: Built with Jetpack Compose, featuring Material 3 design and Dark Mode support.
 - **Battery Optimization Aware**: Built-in prompts to help you exclude the app from battery restrictions for stable long-term streaming.
 
-## 🛠️ How It Works
+## 📦 Installation & Setup
 
-1. **PC Receiver**: Ensure you have a UDP receiver app running on your PC listening on **Port 8765**.
-2. **Connectivity**: Make sure your Phone and PC are on the same Wi-Fi network.
-3. **Setup**:
-   - Open the app and enter your PC's local IP address.
-   - Grant the necessary permissions (Record Audio, Notification, and Media Projection if required).
-4. **Stream**: Select your desired mode and hit the button!
+### 1. PC Receiver (Server)
+You must have the receiver app running on your Windows PC to hear the audio.
+- Download **`Virtualmic_server.exe.zip`** from the [Latest Releases](https://github.com/Ariok12/VirtualMic/releases/latest).
+- Extract and run the `.exe` file.
+- It will listen on **UDP Port 8765**. Ensure your Windows Firewall allows this traffic.
+
+### 2. Android App (Client)
+- Download the latest **`.apk`** from the [Releases](https://github.com/Ariok12/VirtualMic/releases) page.
+- Install it on your Android device (ensure "Install from unknown sources" is enabled).
+
+## 🛠️ How To Use
+
+1. **Connectivity**: Ensure your Phone and PC are on the same Wi-Fi network.
+2. **IP Address**: Open the PC server to see your local IP (e.g., `192.168.1.5`).
+3. **App Setup**:
+   - Open the Android app and enter that IP address.
+   - Grant necessary permissions (Audio, Notifications, Media Projection).
+4. **Stream**: Select your mode and click Start!
 
 ## 📡 Technical Details
 
