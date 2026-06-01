@@ -2,6 +2,9 @@
 
 ![Virtual Mic Icon](app/src/main/ic_launcher-playstore.png)
 
+> [!IMPORTANT]
+> **AI-Powered Development**: This entire project—including the Android application, the PC receiver server, and even this documentation—was researched, designed, and implemented using **Artificial Intelligence**.
+
 **Virtual Mic** is a high-performance Android application designed to stream your device's audio (Microphone, System Media, or Both) directly to your PC over Wi-Fi with minimal latency.
 
 ## 🚀 Features
