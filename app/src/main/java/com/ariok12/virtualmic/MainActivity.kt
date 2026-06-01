@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
 
         val sharedPref = getPreferences(MODE_PRIVATE)
         isDarkMode = sharedPref.getBoolean("is_dark_mode", false)
-        ipAddress = sharedPref.getString("pc_ip", "192.168.0.152") ?: ""
+        ipAddress = sharedPref.getString("pc_ip", "") ?: ""
         // removed audiofx sharedpref read
         micGain = sharedPref.getFloat("mic_gain", 1f)
         isStereo = sharedPref.getBoolean("is_stereo", false)
