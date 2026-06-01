@@ -18,6 +18,13 @@
 - **Modern UI**: Built with Jetpack Compose, featuring Material 3 design and Dark Mode support.
 - **Battery Optimization Aware**: Built-in prompts to help you exclude the app from battery restrictions for stable long-term streaming.
 
+## 📱 App Design
+
+<p align="center">
+  <img src="app/src/main/res/drawable-nodpi/screenshot_main.jpg" width="300" alt="Virtual Mic Main Screen">
+  <img src="app/src/main/res/drawable-nodpi/screenshot_modes.jpg" width="300" alt="Virtual Mic Modes Screen">
+</p>
+
 ## 📦 Installation & Setup
 
 ### 1. PC Receiver (Server)
