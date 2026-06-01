@@ -30,11 +30,15 @@ You must have the receiver app running on your Windows PC to hear the audio.
 ## 🛠️ How To Use
 
 1. **Connectivity**: Ensure your Phone and PC are on the same Wi-Fi network.
-2. **IP Address**: Open the PC server to see your local IP (e.g., `192.168.1.5`).
-3. **App Setup**:
-   - Open the Android app and enter that IP address.
-   - Grant necessary permissions (Audio, Notifications, Media Projection).
-4. **Stream**: Select your mode and click Start!
+2. **🔍 Auto-Detect PC (Network Service Discovery)**:
+   - The PC Server now broadcasts its IP address on your local Wi-Fi.
+   - In the Android app, simply tap the **Search (Magnifying Glass)** Icon next to the IP address input.
+   - The app will automatically find the PC and fill in the IP Address!
+3. **Manual Setup (Fallback)**:
+   - If auto-detect fails, open the PC server to see your local IP (e.g., `192.168.1.5`).
+   - Enter that IP address manually in the Android app.
+4. **Stream**: Select your mode (Mic, Media, or Both) and click Start!
+   - Grant necessary permissions (Audio, Notifications, Media Projection) when prompted.
 
 ## 📡 Technical Details
 
