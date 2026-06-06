@@ -23,9 +23,8 @@
 
 ### 1. PC Receiver (Server)
 You must have the receiver app running on your Windows PC to hear the audio.
-- Download the server source code from this repository.
-- Ensure you have Python installed, then install dependencies: `pip install pyaudio numpy customtkinter pystray pillow zeroconf`
-- Run the server: `python server.py`
+- Download **`Virtualmic_server.exe.zip`** from the [Latest Releases](https://github.com/Ariok12/VirtualMic/releases/latest).
+- Extract and run the `.exe` file.
 - It will listen on **UDP Port 8765**. Ensure your Windows Firewall allows this traffic.
 
 ### 2. Android App (Client)
