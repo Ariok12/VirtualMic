@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.ariok12.virtualmic"
-        minSdk = 30
+        minSdk = 31
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -28,8 +28,6 @@ android {
             )
         }
         debug {
-            isMinifyEnabled = true
-            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -57,6 +55,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
     
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

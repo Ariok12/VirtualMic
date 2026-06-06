@@ -1,20 +1,19 @@
 package com.ariok12.virtualmic
 
 import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
-import android.os.Build
-import android.os.Bundle
-import android.widget.Toast
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
 import android.content.IntentFilter
-import androidx.core.net.toUri
-import android.provider.Settings
-import android.os.PowerManager
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -22,8 +21,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -35,14 +34,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import androidx.core.net.toUri
+import com.ariok12.virtualmic.ui.components.ConnectionStatusIndicator
+import com.ariok12.virtualmic.ui.components.SettingsScreen
+import com.ariok12.virtualmic.ui.components.VuMeter
 import com.ariok12.virtualmic.ui.theme.VirtualMicTheme
-import java.util.Locale
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -53,22 +55,22 @@ class MainActivity : ComponentActivity() {
     private var isStreaming by mutableStateOf(false)
     private var isBatteryOptimized by mutableStateOf(false)
     
-    private var nsdManager: NsdManager? = null
-    private var discoveryListener: NsdManager.DiscoveryListener? = null
+    private lateinit var nsdHelper: NsdHelper
+    private var isScanningPc by mutableStateOf(false)
+    private var isMuted by mutableStateOf(false)
     
-    // UI States that need persisting
     private var ipAddress by mutableStateOf("")
-    private var isDarkMode by mutableStateOf(false)
+
+    private lateinit var ipHistoryManager: IpHistoryManager
+    private lateinit var settingsManager: SettingsManager
     
-    // removed audiofx state vars
-    private var micGain by mutableStateOf(1f)
-    private var isStereo by mutableStateOf(false)
-    private var is48k by mutableStateOf(false)
+    private var currentAppSettings: AppSettings = AppSettings()
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == MicService.ACTION_STATE_CHANGED) {
                 isStreaming = intent.getBooleanExtra(MicService.EXTRA_IS_STREAMING, false)
+                isMuted = intent.getBooleanExtra(MicService.EXTRA_IS_MUTED, false)
             }
         }
     }
@@ -77,15 +79,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        nsdManager = getSystemService(Context.NSD_SERVICE) as NsdManager
+        nsdHelper = NsdHelper(this)
+        ipHistoryManager = IpHistoryManager(this)
+        settingsManager = SettingsManager(this)
 
         val sharedPref = getPreferences(MODE_PRIVATE)
-        isDarkMode = sharedPref.getBoolean("is_dark_mode", false)
         ipAddress = sharedPref.getString("pc_ip", "") ?: ""
-        // removed audiofx sharedpref read
-        micGain = sharedPref.getFloat("mic_gain", 1f)
-        isStereo = sharedPref.getBoolean("is_stereo", false)
-        is48k = sharedPref.getBoolean("is_48k", false)
 
         mediaProjectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if ((result.resultCode == RESULT_OK) && (result.data != null)) {
@@ -97,116 +96,104 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val systemDark = isSystemInDarkTheme()
-            LaunchedEffect(Unit) {
-                checkBatteryOptimization()
-                if (sharedPref.contains("is_dark_mode").not()) {
-                    isDarkMode = systemDark
-                }
+            val coroutineScope = rememberCoroutineScope()
+            val ipHistory by ipHistoryManager.ipHistory.collectAsState(initial = emptyList())
+            val appSettings by settingsManager.appSettingsFlow.collectAsState(initial = AppSettings(isDarkMode = systemDark))
+            
+            LaunchedEffect(appSettings) {
+                currentAppSettings = appSettings
             }
 
-            VirtualMicTheme(darkTheme = isDarkMode) {
+            var showSettings by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                checkBatteryOptimization()
+            }
+
+            VirtualMicTheme(darkTheme = appSettings.isDarkMode) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    MainScreen(
-                        ipAddress = ipAddress,
-                        onIpChange = { 
-                            ipAddress = it
-                            sharedPref.edit { putString("pc_ip", it) }
-                        },
-                        isDarkMode = isDarkMode,
-                        isStreaming = isStreaming,
-                        onToggleTheme = {
-                            isDarkMode = !isDarkMode
-                            sharedPref.edit { putBoolean("is_dark_mode", isDarkMode) }
-                        },
-                        onStartMic = { startMicStream(ipAddress) },
-                        onStartMedia = {
-                            pendingMediaAction = MicService.ACTION_START_MEDIA
-                            startMediaStreamPrompt(ipAddress)
-                        },
-                        onStartBoth = {
-                            pendingMediaAction = MicService.ACTION_START_BOTH
-                            startMediaStreamPrompt(ipAddress)
-                        },
-                        onStop = { stopStreaming() },
-                        isBatteryOptimized = isBatteryOptimized,
-                        onRequestBatteryExemption = { requestBatteryOptimizationExemption() },
-                        onScanPc = { scanForPc() },
-                        
-                        // removed audiofx callbacks
-                        micGain = micGain,
-                        onMicGainChange = { micGain = it; sharedPref.edit { putFloat("mic_gain", it) } },
-                        
-                        isStereo = isStereo,
-                        onIsStereoChange = { isStereo = it; sharedPref.edit { putBoolean("is_stereo", it) } },
-                        
-                        is48k = is48k,
-                        onIs48kChange = { is48k = it; sharedPref.edit { putBoolean("is_48k", it) } }
-                    )
+                    if (showSettings) {
+                        SettingsScreen(
+                            settings = appSettings,
+                            onNavigateBack = { showSettings = false },
+                            onMicGainChange = { coroutineScope.launch { settingsManager.updateMicGain(it) } },
+                            onStereoChange = { coroutineScope.launch { settingsManager.updateIsStereo(it) } },
+                            onSampleRateChange = { coroutineScope.launch { settingsManager.updateSampleRate(it) } },
+                            onThemeChange = { coroutineScope.launch { settingsManager.updateIsDarkMode(it) } }
+                        )
+                    } else {
+                        MainScreen(
+                            ipAddress = ipAddress,
+                            onIpChange = { 
+                                ipAddress = it
+                                sharedPref.edit { putString("pc_ip", it) }
+                            },
+                            ipHistory = ipHistory,
+                            isStreaming = isStreaming,
+                            onOpenSettings = { showSettings = true },
+                            onStartMic = { 
+                                startMicStream(ipAddress) 
+                                coroutineScope.launch { ipHistoryManager.addIpToHistory(ipAddress) }
+                            },
+                            onStartMedia = {
+                                pendingMediaAction = MicService.ACTION_START_MEDIA
+                                startMediaStreamPrompt(ipAddress)
+                                coroutineScope.launch { ipHistoryManager.addIpToHistory(ipAddress) }
+                            },
+                            onStartBoth = {
+                                pendingMediaAction = MicService.ACTION_START_BOTH
+                                startMediaStreamPrompt(ipAddress)
+                                coroutineScope.launch { ipHistoryManager.addIpToHistory(ipAddress) }
+                            },
+                            isMuted = isMuted,
+                            onMuteToggle = { toggleMute() },
+                            onStop = { stopStreaming() },
+                            isBatteryOptimized = isBatteryOptimized,
+                            onRequestBatteryExemption = { requestBatteryOptimizationExemption() },
+                            isScanning = isScanningPc,
+                            onScanPc = { scanForPc() }
+                        )
+                    }
                 }
             }
         }
         isStreaming = MicService.isServiceRunning
+        isMuted = MicService.isMuted
         val filter = IntentFilter(MicService.ACTION_STATE_CHANGED)
         ContextCompat.registerReceiver(this, stateReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
         requestPermissions()
     }
     
     private fun scanForPc() {
-        Toast.makeText(this, "Scanning for PC...", Toast.LENGTH_SHORT).show()
-        discoveryListener?.let { 
-            try { nsdManager?.stopServiceDiscovery(it) } catch (e: Exception) {}
-        }
+        if (isScanningPc) return
+        isScanningPc = true
         
-        discoveryListener = object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(regType: String) {}
-            override fun onServiceFound(service: NsdServiceInfo) {
-                if (service.serviceName.contains("VirtualMic")) {
-                    nsdManager?.resolveService(service, object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
-                        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                            val ip = serviceInfo.host.hostAddress
-                            runOnUiThread {
-                                if (ip != null) {
-                                    ipAddress = ip
-                                    getPreferences(MODE_PRIVATE).edit { putString("pc_ip", ip) }
-                                    Toast.makeText(this@MainActivity, "Found PC: $ip", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            try { nsdManager?.stopServiceDiscovery(discoveryListener) } catch (e: Exception) {}
-                        }
-                    })
-                }
+        nsdHelper.scanForPc(timeoutMillis = 5000L, callback = object : NsdHelper.NsdCallback {
+            override fun onServerFound(ip: String) {
+                isScanningPc = false
+                ipAddress = ip
+                getPreferences(MODE_PRIVATE).edit { putString("pc_ip", ip) }
+                Toast.makeText(this@MainActivity, "Found PC: $ip", Toast.LENGTH_SHORT).show()
             }
-            override fun onServiceLost(service: NsdServiceInfo) {}
-            override fun onDiscoveryStopped(serviceType: String) {}
-            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                try { nsdManager?.stopServiceDiscovery(this) } catch (e: Exception) {}
+
+            override fun onError(message: String) {
+                isScanningPc = false
+                Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
             }
-            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                try { nsdManager?.stopServiceDiscovery(this) } catch (e: Exception) {}
-            }
-        }
-        try {
-            nsdManager?.discoverServices("_virtualmic._udp.", NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        })
     }
 
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(stateReceiver)
-        discoveryListener?.let { 
-            try { nsdManager?.stopServiceDiscovery(it) } catch (e: Exception) {}
-        }
+        nsdHelper.stopDiscovery()
     }
     
     private fun putExtras(intent: Intent, ip: String) {
         intent.putExtra("EXTRA_IP", ip)
-        // removed audiofx intent extras
-        intent.putExtra("EXTRA_MIC_GAIN", micGain)
-        intent.putExtra("EXTRA_STEREO", isStereo)
-        intent.putExtra("EXTRA_48K", is48k)
+        intent.putExtra("EXTRA_MIC_GAIN", currentAppSettings.micGain)
+        intent.putExtra("EXTRA_STEREO", currentAppSettings.isStereo)
+        intent.putExtra("EXTRA_SAMPLE_RATE", currentAppSettings.sampleRate)
     }
 
     private fun startMicStream(ip: String) {
@@ -246,6 +233,10 @@ class MainActivity : ComponentActivity() {
     private fun stopStreaming() {
         startService(Intent(this, MicService::class.java).apply { action = MicService.ACTION_STOP })
         Toast.makeText(this, "Streaming Stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun toggleMute() {
+        startService(Intent(this, MicService::class.java).apply { action = MicService.ACTION_MUTE })
     }
 
     private fun hasPermissions(): Boolean {
@@ -291,34 +282,27 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     ipAddress: String,
     onIpChange: (String) -> Unit,
-    isDarkMode: Boolean,
+    ipHistory: List<String>,
     isStreaming: Boolean,
-    onToggleTheme: () -> Unit,
+    onOpenSettings: () -> Unit,
     onStartMic: () -> Unit,
     onStartMedia: () -> Unit,
     onStartBoth: () -> Unit,
+    isMuted: Boolean,
+    onMuteToggle: () -> Unit,
     onStop: () -> Unit,
     isBatteryOptimized: Boolean,
     onRequestBatteryExemption: () -> Unit,
-    onScanPc: () -> Unit,
-    // removed audiofx state params
-    micGain: Float,
-    onMicGainChange: (Float) -> Unit,
-    isStereo: Boolean,
-    onIsStereoChange: (Boolean) -> Unit,
-    is48k: Boolean,
-    onIs48kChange: (Boolean) -> Unit
+    isScanning: Boolean,
+    onScanPc: () -> Unit
 ) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Virtual Mic", fontWeight = FontWeight.Bold) },
                 actions = {
-                    IconButton(onClick = onToggleTheme) {
-                        Icon(
-                            if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = "Toggle Theme"
-                        )
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -372,45 +356,14 @@ fun MainScreen(
                 }
             }
 
-            // Status Card
-            val statusColor = if (isStreaming) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer
-            val statusIcon = if (isStreaming) Icons.Default.CloudUpload else Icons.Default.Wifi
-            val statusText = if (isStreaming) "Streaming to $ipAddress" else "Ready to connect"
-            val onStatusColor = if (isStreaming) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
+            // Connection Indicator
+            ConnectionStatusIndicator(isStreaming = isStreaming, ipAddress = ipAddress)
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = statusColor),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        statusIcon,
-                        contentDescription = null,
-                        tint = onStatusColor,
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            "Status",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = onStatusColor.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            statusText,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = onStatusColor
-                        )
-                    }
-                }
+            if (isStreaming) {
+                VuMeter(amplitudeFlow = MicService.amplitudeFlow)
             }
 
-            // IP Input Card
+            // IP Input Card with Dropdown
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -424,76 +377,53 @@ fun MainScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = ipAddress,
-                            onValueChange = onIpChange,
-                            label = { Text("PC IP Address") },
-                            placeholder = { Text("e.g. 192.168.1.15") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            shape = RoundedCornerShape(16.dp)
-                        )
+                        var expanded by remember { mutableStateOf(false) }
+                        
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = ipAddress,
+                                onValueChange = onIpChange,
+                                label = { Text("PC IP Address") },
+                                placeholder = { Text("e.g. 192.168.1.15") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                                },
+                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                                modifier = Modifier.menuAnchor()
+                            )
+                            
+                            if (ipHistory.isNotEmpty()) {
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false }
+                                ) {
+                                    ipHistory.forEach { ip ->
+                                        DropdownMenuItem(
+                                            text = { Text(ip) },
+                                            onClick = {
+                                                onIpChange(ip)
+                                                expanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
                         Spacer(modifier = Modifier.width(8.dp))
                         IconButton(onClick = onScanPc, modifier = Modifier.size(56.dp)) {
-                            Icon(Icons.Default.Search, contentDescription = "Scan PC", tint = MaterialTheme.colorScheme.primary)
+                            if (isScanning) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Search, contentDescription = "Scan PC", tint = MaterialTheme.colorScheme.primary)
+                            }
                         }
-                    }
-                }
-            }
-            
-            // Advanced Settings
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Audio Enhancements", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // removed audiofx switches
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(String.format(Locale.US, "Mic Gain: %.1fx", micGain), style = MaterialTheme.typography.titleMedium)
-                    Slider(
-                        value = micGain,
-                        onValueChange = onMicGainChange,
-                        valueRange = 0.1f..5.0f,
-                        steps = 49
-                    )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Format Settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = !isStereo,
-                            onClick = { onIsStereoChange(false) },
-                            label = { Text("Mono") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        FilterChip(
-                            selected = isStereo,
-                            onClick = { onIsStereoChange(true) },
-                            label = { Text("Stereo") },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = !is48k,
-                            onClick = { onIs48kChange(false) },
-                            label = { Text("44.1 kHz") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        FilterChip(
-                            selected = is48k,
-                            onClick = { onIs48kChange(true) },
-                            label = { Text("48 kHz") },
-                            modifier = Modifier.weight(1f)
-                        )
                     }
                 }
             }
@@ -506,47 +436,59 @@ fun MainScreen(
                 color = MaterialTheme.colorScheme.secondary
             )
 
-            // Grid-like buttons
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StreamModeButton(
-                    modifier = Modifier.weight(1f),
-                    title = "Mic Only",
-                    icon = Icons.Default.Mic,
-                    color = Color(0xFF4CAF50),
-                    enabled = !isStreaming,
-                    onClick = onStartMic
-                )
-                StreamModeButton(
-                    modifier = Modifier.weight(1f),
-                    title = "Media Only",
-                    icon = Icons.Default.Monitor,
-                    color = Color(0xFF2196F3),
-                    enabled = !isStreaming,
-                    onClick = onStartMedia
-                )
+            // Segmented Chips for Modes
+            var selectedMode by remember { mutableStateOf("Mic") }
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = selectedMode == "Mic",
+                    onClick = { selectedMode = "Mic"; if (!isStreaming) onStartMic() },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                ) {
+                    Text("🎤 Mic")
+                }
+                SegmentedButton(
+                    selected = selectedMode == "Media",
+                    onClick = { selectedMode = "Media"; if (!isStreaming) onStartMedia() },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                ) {
+                    Text("🎵 Media")
+                }
+                SegmentedButton(
+                    selected = selectedMode == "Both",
+                    onClick = { selectedMode = "Both"; if (!isStreaming) onStartBoth() },
+                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                ) {
+                    Text("🔄 Both")
+                }
             }
-
-            StreamModeButton(
-                modifier = Modifier.fillMaxWidth(),
-                title = "Both (Mic + Media)",
-                icon = Icons.Default.GraphicEq,
-                color = Color(0xFF9C27B0),
-                enabled = !isStreaming,
-                onClick = onStartBoth
-            )
             
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             if (isStreaming) {
-                Button(
-                    onClick = onStop,
-                    modifier = Modifier.fillMaxWidth().height(64.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = null)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("STOP STREAMING", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                Row(modifier = Modifier.fillMaxWidth().height(64.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Button(
+                        onClick = onMuteToggle,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isMuted) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = if (isMuted) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(if (isMuted) Icons.Default.MicOff else Icons.Default.Mic, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isMuted) "UNMUTE" else "MUTE", fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = onStop,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("STOP", fontWeight = FontWeight.ExtraBold)
+                    }
                 }
             }
 
@@ -557,33 +499,6 @@ fun MainScreen(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-    }
-}
-
-@Composable
-fun StreamModeButton(
-    modifier: Modifier = Modifier,
-    title: String,
-    icon: ImageVector,
-    color: Color,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    FilledTonalButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.height(100.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = color.copy(alpha = 0.15f),
-            contentColor = color
-        )
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(title, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
     }
 }
