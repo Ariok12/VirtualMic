@@ -14,23 +14,18 @@
   - 🎵 **Media Only**: Stream system audio (YouTube, Music, Games) directly to your PC.
   - 🔄 **Both**: Stream both your voice and system audio simultaneously.
 - **Low Latency**: Optimized UDP-based streaming with `WIFI_MODE_FULL_LOW_LATENCY` support.
+- **Audio Settings**: Fully customizable sample rates (16kHz, 44.1kHz, 48kHz), Mono/Stereo toggle, and adjustable Mic Gain (0.1x to 5.0x) directly from the app.
 - **Background Reliable**: Uses Foreground Services and WakeLocks to ensure streaming doesn't cut out when the screen is off.
 - **Modern UI**: Built with Jetpack Compose, featuring Material 3 design and Dark Mode support.
 - **Battery Optimization Aware**: Built-in prompts to help you exclude the app from battery restrictions for stable long-term streaming.
-
-## 📱 App Design
-
-<p align="center">
-  <img src="app/src/main/res/drawable-nodpi/screenshot_main.jpg" width="300" alt="Virtual Mic Main Screen">
-  <img src="app/src/main/res/drawable-nodpi/screenshot_modes.jpg" width="300" alt="Virtual Mic Modes Screen">
-</p>
 
 ## 📦 Installation & Setup
 
 ### 1. PC Receiver (Server)
 You must have the receiver app running on your Windows PC to hear the audio.
-- Download **`Virtualmic_server.exe.zip`** from the [Latest Releases](https://github.com/Ariok12/VirtualMic/releases/latest).
-- Extract and run the `.exe` file.
+- Download the server source code from this repository.
+- Ensure you have Python installed, then install dependencies: `pip install pyaudio numpy customtkinter pystray pillow zeroconf`
+- Run the server: `python server.py`
 - It will listen on **UDP Port 8765**. Ensure your Windows Firewall allows this traffic.
 
 ### 2. Android App (Client)
@@ -54,8 +49,9 @@ You must have the receiver app running on your Windows PC to hear the audio.
 
 - **Protocol**: UDP (User Datagram Protocol)
 - **Port**: 8765
-- **Audio Format**: PCM 16-bit
-- **Sample Rate**: 44.1kHz / 48kHz (Automatic/Selectable)
+- **Audio Format**: Raw PCM 16-bit
+- **Sample Rate**: 16kHz / 44.1kHz / 48kHz (Selectable in settings)
+- **Channels**: Mono / Stereo (Selectable in settings)
 - **Minimum SDK**: Android 10 (API 29) - Required for System Audio Capture.
 
 ## 📸 Permissions Required
